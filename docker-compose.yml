@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: ecommerce_pg
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: ecommerce_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  airflow:
+    image: apache/airflow:2.8.1
+    container_name: ecommerce_airflow
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/ecommerce_db
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+      - ./dags:/opt/airflow/dags
+    ports:
+      - "8081:8080"
+    command: >
+      bash -c "
+      sleep 10 &&
+      airflow db init &&
+      airflow users create --username admin --password admin --firstname admin --lastname user --role Admin --email admin@example.com &&
+      airflow webserver &
+      airflow scheduler
+      "
+
+volumes:
+  pg_data:
