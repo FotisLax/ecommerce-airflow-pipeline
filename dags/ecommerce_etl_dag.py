@@ -20,7 +20,7 @@ def extract():
         ("Headphones", "Electronics", 150),
     ]
 
-    orders=[]
+    orders = []
 
     for _ in range(50):
         product = random.choice(products)
@@ -34,20 +34,22 @@ def extract():
             "price": product[2],
             "quantity": quantity,
             "total_amount": product[2] * quantity,
-            "order-date": datetime.now().date()
+            "order_date": datetime.now().date()
         })
 
     return orders
 
+
 def load(**context):
-    orders =context["ti"].com_pull(task_ids = "extract_task")
+    orders = context["ti"].xcom_pull(task_ids="extract_task")
 
     conn = psycopg2.connect(
         host="postgres",
-        database = "ecommerce_db",
+        database="ecommerce_db",
         user="airflow",
         password="airflow"
     )
+
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -65,9 +67,9 @@ def load(**context):
 
     for order in orders:
         cursor.execute("""
-            INSTERT INTO fact_orders VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            INSERT INTO fact_orders VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (order_id) DO NOTHING
-        """,(
+        """, (
             order["order_id"],
             order["customer_id"],
             order["product_name"],
@@ -77,22 +79,25 @@ def load(**context):
             order["total_amount"],
             order["order_date"]
         ))
+
     conn.commit()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS daily_dales_metrics AS
-        SELECT
-                order_date,
-                   SUM(total_amount) AS total_revenue,
-                   COUNT(order_id) AS total_orders,
-                   AVG(total_amount) AS avg_order_value
-        FROM fact_orders
-        GROUP BY order_date
-    """)
+def aggregate():
+    conn = psycopg2.connect(
+            host = "postgres",
+            databse = "ecommerce_db",
+            user="airflow",
+            password="airflow"
+    )
+
+    cursor = conn.cursor()
 
     conn.commit()
     cursor.close()
     conn.close()
+
+
+
 
 with DAG(
     dag_id="ecommerce_elt_pipeline",
@@ -100,9 +105,10 @@ with DAG(
     start_date=datetime(2024, 1, 1),
     schedule_interval="@hourly",
     catchup=False,
-)as dag:
+) as dag:
+
     extract_task = PythonOperator(
-        task_id="exrtract-task",
+        task_id="extract_task",
         python_callable=extract,
     )
 
@@ -111,4 +117,9 @@ with DAG(
         python_callable=load,
     )
 
-    extract_task >> load_task
+    aggregate_task = PythonOperator(
+    task_id="aggregate_task",
+    python_callable=aggregate,
+    )
+
+    extract_task >> load_task >> aggregate_task
