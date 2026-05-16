@@ -23,7 +23,7 @@ services:
     volumes:
       - ./dags:/opt/airflow/dags
     ports:
-      - "8081:8080"
+      - "8080:8080"
     command: webserver
 
   airflow-scheduler:

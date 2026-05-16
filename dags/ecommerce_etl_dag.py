@@ -96,6 +96,31 @@ def aggregate():
     cursor.close()
     conn.close()
 
+def check_data_quality(**context):
+    import psycopg2
+
+    conn = psycopg2.connect(
+        host="ecommerce_pg",
+        data="ecommerce",
+        user="airflow",
+        password="airflow"
+    )
+
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM orders;")
+    result = cursor.fetchone()
+    row_count = result[0]
+
+    cursor.close()
+    conn.close()
+
+    if row_count == 0:
+        raise ValueError("Data qualty check failed: orders table is empty.")
+    
+    print (f"Data quality passed. {row_count} rows found.")
+
+
 
 
 
@@ -122,4 +147,9 @@ with DAG(
     python_callable=aggregate,
     )
 
-    extract_task >> load_task >> aggregate_task
+    quality_task = PythonOperator(
+        task_id="check_data_quality",
+        python_callable=check_data_quality,
+    )
+
+    extract_task >> load_task >> aggregate_task >> quality_task
