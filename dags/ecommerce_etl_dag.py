@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import random
 import psycopg2
 import uuid
+import logging
 
 default_args = {
     "owner": "airflow",
@@ -11,13 +12,45 @@ default_args = {
     "retry_delay": timedelta(minutes=1)
 }
 
+logger = logging.getLogger(__name__)
+
 def extract():
+    logging.info("Starting extraction task...")
+
     products = [
         ("Laptop", "Electronics", 1200),
         ("Phone", "Electronics", 800),
         ("Shoes", "Fashion", 120),
         ("Watch", "Accessories", 250),
         ("Headphones", "Electronics", 150),
+    ]
+    customers = [
+        "Alice Johnson",
+        "Bob Smith",
+        "Michael Brown",
+        "Emma Wilson",
+        "Sophia Taylor",
+        "Daniel Moore",
+    ]
+
+    cities = [
+        "New York",
+        "London",
+        "Berlin",
+        "Athens",
+        "Paris",
+    ]
+
+    payment_methods = [
+        "Credit Card",
+        "PayPal",
+        "Apple Pay",
+    ]
+
+    statuses = [
+        "Completed",
+        "Pending",
+        "Cancelled",
     ]
 
     orders = []
@@ -28,7 +61,11 @@ def extract():
 
         orders.append({
             "order_id": str(uuid.uuid4()),
-            "customer_id": random.randint(1, 20),
+            "customer_name": random.choice(customers),
+            "city": random.choice(cities),
+            "payment_method": random.choice(payment_methods),
+            "status": random.choice(statuses),
+
             "product_name": product[0],
             "category": product[1],
             "price": product[2],
@@ -36,11 +73,12 @@ def extract():
             "total_amount": product[2] * quantity,
             "order_date": datetime.now().date()
         })
-
+    logging.info(f"Extraction completed. Generated {len(orders)} orders.")
     return orders
 
-
 def load(**context):
+    orders = context["ti"].xcom_pull(task_ids="extract_task")
+    logging.info(f"Loading {len(orders)} orders into database")
     orders = context["ti"].xcom_pull(task_ids="extract_task")
 
     conn = psycopg2.connect(
@@ -55,7 +93,10 @@ def load(**context):
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS fact_orders (
             order_id TEXT PRIMARY KEY,
-            customer_id INT,
+            customer_name TEXT,
+            city TEXT,
+            payment_method TEXT,
+            status TEXT,
             product_name TEXT,
             category TEXT,
             price FLOAT,
@@ -67,11 +108,14 @@ def load(**context):
 
     for order in orders:
         cursor.execute("""
-            INSERT INTO fact_orders VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            INSERT INTO fact_orders VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (order_id) DO NOTHING
         """, (
             order["order_id"],
-            order["customer_id"],
+            order["customer_name"],
+            order["city"],
+            order["payment_method"],
+            order["status"],
             order["product_name"],
             order["category"],
             order["price"],
@@ -79,10 +123,12 @@ def load(**context):
             order["total_amount"],
             order["order_date"]
         ))
+    logging.info("Load task completed successfully")
 
     conn.commit()
 
 def aggregate():
+    logging.info("Starting aggregation task...")
     conn = psycopg2.connect(
             host = "postgres",
             databse = "ecommerce_db",
@@ -91,13 +137,13 @@ def aggregate():
     )
 
     cursor = conn.cursor()
-
+    logging.info("Aggregation completed")
     conn.commit()
     cursor.close()
     conn.close()
 
 def check_data_quality(**context):
-    import psycopg2
+    logging.info("Starting data quality checks...")
 
     conn = psycopg2.connect(
         host="ecommerce_pg",
@@ -111,15 +157,13 @@ def check_data_quality(**context):
     cursor.execute("SELECT COUNT(*) FROM orders;")
     result = cursor.fetchone()
     row_count = result[0]
-
+    logging.info("Data quality checks passed successfully")
     cursor.close()
     conn.close()
 
     if row_count == 0:
-        raise ValueError("Data qualty check failed: orders table is empty.")
-    
-    print (f"Data quality passed. {row_count} rows found.")
-
+        logging.error("Data quality failed: No records found")
+        raise ValueError("Quality check failed")
 
 
 
