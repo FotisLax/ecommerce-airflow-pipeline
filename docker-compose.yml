@@ -38,6 +38,14 @@ services:
     volumes:
       - ./dags:/opt/airflow/dags
     command: scheduler
+  
+  metabase:
+    image: metabase/metabase
+    container_name: ecommerce_metabase
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
 
 volumes:
   pg_data:
