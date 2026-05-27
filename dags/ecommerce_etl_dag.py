@@ -128,16 +128,46 @@ def load(**context):
     conn.commit()
 
 def aggregate():
-    logging.info("Starting aggregation task...")
+    logging.info("Starting incremental aggregation...")
     conn = psycopg2.connect(
             host = "postgres",
             databse = "ecommerce_db",
             user="airflow",
             password="airflow"
     )
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS daily_sales_metrics (
+            order_date DATE PRIMARY KEY,
+            total_revenue FLOAT,
+            total_orders INT,
+            avg_order_value FLOAT
+        )
+    """)
+    cursor.execute("""
+        INSERT INTO daily_sales_metrics (
+            order_date,
+            total_revenue,
+            total_orders,
+            avg_order_value
+        )
+        SELECT
+            order_date,
+            SUM(total_amount) AS total_revenue,
+            COUNT(order_id) AS total_orders,
+            AVG(total_amount) AS avg_order_value
+        FROM fact_orders
+        WHERE order_date = CURRENT_DATE
+        GROUP BY order_date
+
+        ON CONFLICT (order_date)
+        DO UPDATE SET
+            total_revenue = EXCLUDED.total_revenue,
+            total_orders = EXCLUDED.total_orders,
+            avg_order_value = EXCLUDED.avg_order_value
+    """)
 
     cursor = conn.cursor()
-    logging.info("Aggregation completed")
+    logging.info("Incremental aggregation completed successfully")
     conn.commit()
     cursor.close()
     conn.close()
